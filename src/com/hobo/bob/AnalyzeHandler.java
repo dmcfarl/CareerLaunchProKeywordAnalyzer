@@ -19,7 +19,10 @@ import com.amazonaws.services.dynamodbv2.model.AttributeValue;
 import com.amazonaws.services.dynamodbv2.model.ScanRequest;
 import com.amazonaws.services.dynamodbv2.model.ScanResult;
 import com.amazonaws.services.lambda.runtime.Context;
+import com.amazonaws.services.lambda.runtime.LambdaLogger;
 import com.amazonaws.services.lambda.runtime.RequestHandler;
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
 import com.hobo.bob.model.AnalyzeRequest;
 import com.hobo.bob.model.AnalyzeResponse;
 
@@ -29,6 +32,9 @@ public class AnalyzeHandler implements RequestHandler<AnalyzeRequest, AnalyzeRes
 
 	@Override
 	public AnalyzeResponse handleRequest(AnalyzeRequest input, Context context) {
+		LambdaLogger logger = context.getLogger();
+		Gson gson = new GsonBuilder().setPrettyPrinting().create();
+		logger.log("input: " + gson.toJson(input));
 		AnalyzeResponse response = new AnalyzeResponse();
 		try {
 			initDynamoDbClient();
@@ -76,7 +82,7 @@ public class AnalyzeHandler implements RequestHandler<AnalyzeRequest, AnalyzeRes
 	private Set<String> parse(String toParse) {
 		toParse = toParse.toLowerCase();
 		Set<String> keywords = new HashSet<>();
-		Pattern pattern = Pattern.compile("[\\w-]+");
+		Pattern pattern = Pattern.compile("[\\w-]*[a-z][\\w-]*");
 		Matcher matcher = pattern.matcher(toParse);
 		while (matcher.find()) {
 			keywords.add(matcher.group());
