@@ -20,9 +20,6 @@ import com.amazonaws.services.dynamodbv2.model.ScanRequest;
 import com.amazonaws.services.dynamodbv2.model.ScanResult;
 import com.amazonaws.services.lambda.runtime.Context;
 import com.amazonaws.services.lambda.runtime.RequestHandler;
-//import com.amazonaws.services.lambda.runtime.events.APIGatewayV2ProxyRequestEvent;
-//import com.amazonaws.services.lambda.runtime.events.APIGatewayV2ProxyResponseEvent;
-//import com.google.gson.Gson;
 import com.hobo.bob.model.AnalyzeRequest;
 import com.hobo.bob.model.AnalyzeResponse;
 
@@ -35,15 +32,11 @@ public class AnalyzeHandler implements RequestHandler<AnalyzeRequest, AnalyzeRes
 		AnalyzeResponse response = new AnalyzeResponse();
 		try {
 			initDynamoDbClient();
-			String user = null;//input.getRequestContext().getIdentity().getUser();
 
-//			Map<String, List<String>> parameters = input.getMultiValueQueryStringParameters();
 			try {
-//				List<String> missingKeywords = analyze(user, input.getparameters.get("resume"), parameters.get("jobs"));
-				List<String> missingKeywords = analyze(user, input.getResumeText(), input.getJobsText());
-//				Gson gson = new Gson();
+				List<String> missingKeywords = analyze(input.getResumeText(), input.getJobsText());
+
 				response.setMissingKeywords(missingKeywords);
-				//.setBody(gson.toJson(missingKeywords));
 				response.setStatus(200);
 				response.setMessage("Success");
 			} catch (Exception e) {
@@ -60,16 +53,16 @@ public class AnalyzeHandler implements RequestHandler<AnalyzeRequest, AnalyzeRes
 		return response;
 	}
 
-	private List<String> analyze(String user, String resumeText, String jobsText) {
+	private List<String> analyze(String resumeText, String jobsText) {
 		if (resumeText == null || resumeText.isEmpty() || jobsText == null || jobsText.isEmpty()) {
 			throw new IllegalArgumentException("Resume or jobs were empty");
 		}
 
-		Set<String> resumeKeywords = parse(user, resumeText);
-		Set<String> jobKeywords = parse(user, jobsText);
+		Set<String> resumeKeywords = parse(resumeText);
+		Set<String> jobKeywords = parse(jobsText);
 
 		jobKeywords.removeAll(resumeKeywords);
-		jobKeywords.removeAll(getIgnoredKeywords(user));
+		jobKeywords.removeAll(getIgnoredKeywords());
 
 		List<String> missingKeywords = new ArrayList<>();
 		for (String keyword : jobKeywords) {
@@ -80,7 +73,7 @@ public class AnalyzeHandler implements RequestHandler<AnalyzeRequest, AnalyzeRes
 		return missingKeywords;
 	}
 
-	private Set<String> parse(String user, String toParse) {
+	private Set<String> parse(String toParse) {
 		toParse = toParse.toLowerCase();
 		Set<String> keywords = new HashSet<>();
 		Pattern pattern = Pattern.compile("[\\w-]+");
@@ -89,7 +82,7 @@ public class AnalyzeHandler implements RequestHandler<AnalyzeRequest, AnalyzeRes
 			keywords.add(matcher.group());
 		}
 
-		List<String> multiwordKeywords = getMultiwordKeywords(user);
+		List<String> multiwordKeywords = getMultiwordKeywords();
 		for (String multiword : multiwordKeywords) {
 			if (toParse.contains(multiword)) {
 				keywords.add(multiword);
@@ -106,15 +99,15 @@ public class AnalyzeHandler implements RequestHandler<AnalyzeRequest, AnalyzeRes
 		}
 	}
 
-	private List<String> getMultiwordKeywords(String user) {
-		return scanTable(user, "MultiwordKeywords");
+	private List<String> getMultiwordKeywords() {
+		return scanTable("MultiwordKeywords");
 	}
 
-	private List<String> getIgnoredKeywords(String user) {
-		return scanTable(user, "IgnoredKeywords");
+	private List<String> getIgnoredKeywords() {
+		return scanTable("IgnoredKeywords");
 	}
-	
-	private List<String> scanTable(String user, String table) {
+
+	private List<String> scanTable(String table) {
 		List<String> keywords = new ArrayList<>();
 		ScanResult result = dynamoDb.scan(new ScanRequest().withTableName(table));
 		for (Map<String, AttributeValue> item : result.getItems()) {
