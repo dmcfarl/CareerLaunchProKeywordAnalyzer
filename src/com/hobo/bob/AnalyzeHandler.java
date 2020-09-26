@@ -1,5 +1,7 @@
 package com.hobo.bob;
 
+import java.io.FileInputStream;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
@@ -26,6 +28,10 @@ import com.google.gson.GsonBuilder;
 import com.hobo.bob.model.AnalyzeRequest;
 import com.hobo.bob.model.AnalyzeResponse;
 
+import opennlp.tools.postag.POSModel;
+import opennlp.tools.postag.POSTaggerME;
+import opennlp.tools.tokenize.WhitespaceTokenizer;
+
 public class AnalyzeHandler implements RequestHandler<AnalyzeRequest, AnalyzeResponse> {
 
 	private AmazonDynamoDB dynamoDb = null;
@@ -40,9 +46,14 @@ public class AnalyzeHandler implements RequestHandler<AnalyzeRequest, AnalyzeRes
 			initDynamoDbClient();
 
 			try {
-				List<String> missingKeywords = analyze(input.getResumeText(), input.getJobsText());
+				Set<String> ignoredVerbs = findVerbs(input.getJobsText());
+				List<String> missingKeywords = analyze(input.getResumeText(), input.getJobsText(), ignoredVerbs);
 
 				response.setMissingKeywords(missingKeywords);
+				ignoredVerbs.forEach(verb -> {
+					response.getIgnoredVerbs().add(WordUtils.capitalizeFully(verb));
+				});
+				Collections.sort(response.getIgnoredVerbs());
 				response.setStatus(200);
 				response.setMessage("Success");
 			} catch (Exception e) {
@@ -58,8 +69,31 @@ public class AnalyzeHandler implements RequestHandler<AnalyzeRequest, AnalyzeRes
 
 		return response;
 	}
+	
+	private Set<String> findVerbs(String jobsText) throws IOException {
+		if (jobsText == null || jobsText.isEmpty()) {
+			throw new IllegalArgumentException("Jobs was empty");
+		}
+		
+		Set<String> ignoredVerbs = new HashSet<>();
+		POSModel model = new POSModel(new FileInputStream("en-pos-maxent.bin"));
+		POSTaggerME tagger = new POSTaggerME(model);
+		
+		WhitespaceTokenizer whitespaceTokenizer = WhitespaceTokenizer.INSTANCE;
+		String[] tokens = whitespaceTokenizer.tokenize(jobsText);
+		
+		String[] tags = tagger.tag(tokens);
+		for (int i = 0; i < tags.length; i++) {
+			String token = tokens[i].toLowerCase();
+			if (tags[i].startsWith("V") && !token.endsWith("ing")) {
+				ignoredVerbs.add(token);
+			}
+		}
+		
+		return ignoredVerbs;
+	}
 
-	private List<String> analyze(String resumeText, String jobsText) {
+	private List<String> analyze(String resumeText, String jobsText, Set<String> ignoredVerbs) {
 		if (resumeText == null || resumeText.isEmpty() || jobsText == null || jobsText.isEmpty()) {
 			throw new IllegalArgumentException("Resume or jobs were empty");
 		}
@@ -69,6 +103,10 @@ public class AnalyzeHandler implements RequestHandler<AnalyzeRequest, AnalyzeRes
 
 		jobKeywords.removeAll(resumeKeywords);
 		jobKeywords.removeAll(getIgnoredKeywords());
+		
+		// Determine only the verbs that would actually have been returned and remove
+		ignoredVerbs.retainAll(jobKeywords);
+		jobKeywords.removeAll(ignoredVerbs);
 
 		List<String> missingKeywords = new ArrayList<>();
 		for (String keyword : jobKeywords) {
