@@ -46,8 +46,10 @@ public class AnalyzeHandler implements RequestHandler<AnalyzeRequest, AnalyzeRes
 			initDynamoDbClient();
 
 			try {
-				Set<String> ignoredVerbs = findVerbs(input.getJobsText());
-				List<String> missingKeywords = analyze(input.getResumeText(), input.getJobsText(), ignoredVerbs);
+				Set<String> multiwordKeywords = getMultiwordKeywords();
+				Set<String> ignoredVerbs = findVerbs(input.getJobsText(), multiwordKeywords);
+				List<String> missingKeywords = analyze(input.getResumeText(), input.getJobsText(), ignoredVerbs,
+						multiwordKeywords);
 
 				response.setMissingKeywords(missingKeywords);
 				ignoredVerbs.forEach(verb -> {
@@ -70,7 +72,7 @@ public class AnalyzeHandler implements RequestHandler<AnalyzeRequest, AnalyzeRes
 		return response;
 	}
 	
-	private Set<String> findVerbs(String jobsText) throws IOException {
+	private Set<String> findVerbs(String jobsText, Set<String> multiwordKeywords) throws IOException {
 		if (jobsText == null || jobsText.isEmpty()) {
 			throw new IllegalArgumentException("Jobs was empty");
 		}
@@ -85,7 +87,7 @@ public class AnalyzeHandler implements RequestHandler<AnalyzeRequest, AnalyzeRes
 		String[] tags = tagger.tag(tokens);
 		for (int i = 0; i < tags.length; i++) {
 			String token = tokens[i].toLowerCase();
-			if (tags[i].startsWith("V") && !token.endsWith("ing")) {
+			if (tags[i].startsWith("V") && !token.endsWith("ing") && !multiwordKeywords.contains(token)) {
 				ignoredVerbs.add(token);
 			}
 		}
@@ -93,13 +95,14 @@ public class AnalyzeHandler implements RequestHandler<AnalyzeRequest, AnalyzeRes
 		return ignoredVerbs;
 	}
 
-	private List<String> analyze(String resumeText, String jobsText, Set<String> ignoredVerbs) {
+	private List<String> analyze(String resumeText, String jobsText, Set<String> ignoredVerbs,
+			Set<String> multiwordKeywords) {
 		if (resumeText == null || resumeText.isEmpty() || jobsText == null || jobsText.isEmpty()) {
 			throw new IllegalArgumentException("Resume or jobs were empty");
 		}
 
-		Set<String> resumeKeywords = parse(resumeText);
-		Set<String> jobKeywords = parse(jobsText);
+		Set<String> resumeKeywords = parse(resumeText, multiwordKeywords);
+		Set<String> jobKeywords = parse(jobsText, multiwordKeywords);
 
 		jobKeywords.removeAll(resumeKeywords);
 		jobKeywords.removeAll(getIgnoredKeywords());
@@ -117,7 +120,7 @@ public class AnalyzeHandler implements RequestHandler<AnalyzeRequest, AnalyzeRes
 		return missingKeywords;
 	}
 
-	private Set<String> parse(String toParse) {
+	private Set<String> parse(String toParse, Set<String> multiwordKeywords) {
 		toParse = toParse.toLowerCase();
 		Set<String> keywords = new HashSet<>();
 		Pattern pattern = Pattern.compile("[\\w-]*[a-z][\\w-]*");
@@ -126,7 +129,6 @@ public class AnalyzeHandler implements RequestHandler<AnalyzeRequest, AnalyzeRes
 			keywords.add(matcher.group());
 		}
 
-		List<String> multiwordKeywords = getMultiwordKeywords();
 		for (String multiword : multiwordKeywords) {
 			if (toParse.contains(multiword)) {
 				keywords.add(multiword);
@@ -143,16 +145,16 @@ public class AnalyzeHandler implements RequestHandler<AnalyzeRequest, AnalyzeRes
 		}
 	}
 
-	private List<String> getMultiwordKeywords() {
+	private Set<String> getMultiwordKeywords() {
 		return scanTable("MultiwordKeywords");
 	}
 
-	private List<String> getIgnoredKeywords() {
+	private Set<String> getIgnoredKeywords() {
 		return scanTable("IgnoredKeywords");
 	}
 
-	private List<String> scanTable(String table) {
-		List<String> keywords = new ArrayList<>();
+	private Set<String> scanTable(String table) {
+		Set<String> keywords = new HashSet<>();
 		ScanResult result = dynamoDb.scan(new ScanRequest().withTableName(table));
 		for (Map<String, AttributeValue> item : result.getItems()) {
 			keywords.add(item.get("keyword").getS());
