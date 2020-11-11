@@ -41,7 +41,7 @@ import opennlp.tools.util.Span;
 public class AnalyzeHandler implements RequestHandler<AnalyzeRequest, AnalyzeResponse> {
 
 	private AmazonDynamoDB dynamoDb = null;
-	
+
 	private LambdaLogger logger;
 
 	@Override
@@ -157,8 +157,7 @@ public class AnalyzeHandler implements RequestHandler<AnalyzeRequest, AnalyzeRes
 		List<Keyword> missingKeywords = new ArrayList<>();
 		String jobsTextLower = jobsText.toLowerCase();
 		for (String keyword : jobKeywords) {
-			missingKeywords.add(new Keyword(WordUtils.capitalizeFully(keyword),
-					StringUtils.countMatches(jobsTextLower, keyword)));
+			missingKeywords.add(new Keyword(WordUtils.capitalizeFully(keyword), countMatches(jobsTextLower, keyword)));
 		}
 
 		Collections.sort(missingKeywords, new Comparator<Keyword>() {
@@ -185,12 +184,42 @@ public class AnalyzeHandler implements RequestHandler<AnalyzeRequest, AnalyzeRes
 		}
 
 		for (String multiword : multiwordKeywords) {
-			if (toParse.contains(multiword)) {
+			if (toParse.contains(multiword)
+					|| (multiword.contains("-") && toParse.contains(multiword.replaceAll("-", " ")))) {
 				keywords.add(multiword);
+			} else if (multiword.matches(".*\\(.*\\).*") && multiword.indexOf(" (") > 0
+					&& multiword.indexOf("(") + 1 < multiword.indexOf(")")) {
+				String name = multiword.substring(0, multiword.indexOf(" ("));
+				String abbreviation = multiword.substring(multiword.indexOf("(") + 1, multiword.indexOf(")"));
+				if (toParse.contains(name) || toParse.matches("(?s).*\\b" + abbreviation + "\\b.*")) {
+					keywords.add(multiword);
+				}
 			}
 		}
 
 		return keywords;
+	}
+
+	private int countMatches(String jobsTextLower, String keyword) {
+		int total = StringUtils.countMatches(jobsTextLower, keyword);
+		if (keyword.matches(".*\\(.*\\).*") && keyword.indexOf(" (") > 0
+				&& keyword.indexOf("(") + 1 < keyword.indexOf(")")) {
+			String name = keyword.substring(0, keyword.indexOf(" ("));
+			String abbreviation = keyword.substring(keyword.indexOf("(") + 1, keyword.indexOf(")"));
+			// Only name
+			Matcher matcher = Pattern.compile(name + "(?! \\(" + abbreviation + "\\))").matcher(jobsTextLower);
+			while (matcher.find()) {
+				total++;
+			}
+			// Only abbreviation
+			matcher = Pattern.compile("(?<=\\b|\\\\n)(?<!" + name + " \\()" + abbreviation + "\\b")
+					.matcher(jobsTextLower);
+			while (matcher.find()) {
+				total++;
+			}
+		}
+
+		return total;
 	}
 
 	private void ignoreSet(Set<String> jobKeywords, Set<String> ignored) {
