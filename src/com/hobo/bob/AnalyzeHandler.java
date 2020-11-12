@@ -54,6 +54,13 @@ public class AnalyzeHandler implements RequestHandler<AnalyzeRequest, AnalyzeRes
 			initDynamoDbClient();
 
 			try {
+				if (input.getResumeText() == null) {
+					input.setResumeText("");
+				}
+					
+				if (input.getJobsText() == null || input.getJobsText().isEmpty()) {
+					throw new IllegalArgumentException("Job Description is required to extract keywords");
+				}
 				Set<String> multiwordKeywords = getMultiwordKeywords();
 				Set<String> ignoredVerbs = findVerbs(input.getJobsText(), multiwordKeywords);
 				Set<String> ignoredLocations = findLocations(input.getJobsText(), multiwordKeywords);
@@ -86,10 +93,6 @@ public class AnalyzeHandler implements RequestHandler<AnalyzeRequest, AnalyzeRes
 	}
 
 	private Set<String> findVerbs(String jobsText, Set<String> multiwordKeywords) throws IOException {
-		if (jobsText == null || jobsText.isEmpty()) {
-			throw new IllegalArgumentException("Jobs was empty");
-		}
-
 		Set<String> ignoredVerbs = new HashSet<>();
 		POSModel model = new POSModel(new FileInputStream("en-pos-maxent.bin"));
 		POSTaggerME tagger = new POSTaggerME(model);
@@ -109,10 +112,6 @@ public class AnalyzeHandler implements RequestHandler<AnalyzeRequest, AnalyzeRes
 	}
 
 	private Set<String> findLocations(String jobsText, Set<String> multiwordKeywords) throws IOException {
-		if (jobsText == null || jobsText.isEmpty()) {
-			throw new IllegalArgumentException("Jobs was empty");
-		}
-
 		Set<String> ignoredLocations = new HashSet<>();
 		TokenNameFinderModel model = new TokenNameFinderModel(new FileInputStream("en-ner-location.bin"));
 		NameFinderME finder = new NameFinderME(model);
@@ -141,10 +140,6 @@ public class AnalyzeHandler implements RequestHandler<AnalyzeRequest, AnalyzeRes
 
 	private List<Keyword> analyze(String resumeText, String jobsText, Set<String> ignoredVerbs,
 			Set<String> ignoredLocations, Set<String> multiwordKeywords) {
-		if (resumeText == null || resumeText.isEmpty() || jobsText == null || jobsText.isEmpty()) {
-			throw new IllegalArgumentException("Resume or jobs were empty");
-		}
-
 		Set<String> resumeKeywords = parse(resumeText, multiwordKeywords);
 		Set<String> jobKeywords = parse(jobsText, multiwordKeywords);
 
