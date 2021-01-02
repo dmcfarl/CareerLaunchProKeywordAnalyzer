@@ -4,33 +4,41 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class AnalyzeResponse {
-	private List<Keyword> missingKeywords;
-	private List<String> ignoredVerbs;
-	private List<String> ignoredLocations;
+	private List<Keyword> hardSkills;
+	private List<Keyword> softSkills;
+	private List<Keyword> uncategorizedSkills;
+//	private List<String> ignoredVerbs;
+//	private List<String> ignoredLocations;
 	private int status;
 	private String message;
 
-	public List<Keyword> getMissingKeywords() {
-		if (missingKeywords == null) {
-			missingKeywords = new ArrayList<>();
+	public List<Keyword> getHardSkills() {
+		if (hardSkills == null) {
+			hardSkills = new ArrayList<>();
 		}
-		return missingKeywords;
+		return hardSkills;
 	}
 
-	public void setMissingKeywords(List<Keyword> missingKeywords) {
-		this.missingKeywords = missingKeywords;
-	}
-
-	public List<String> getIgnoredVerbs() {
-		if (ignoredVerbs == null) {
-			ignoredVerbs = new ArrayList<>();
+	public List<Keyword> getSoftSkills() {
+		if (softSkills == null) {
+			softSkills = new ArrayList<>();
 		}
-		return ignoredVerbs;
+		return softSkills;
 	}
 
-	public void setIgnoredVerbs(List<String> ignoredVerbs) {
-		this.ignoredVerbs = ignoredVerbs;
+	public List<Keyword> getUncategorizedSkills() {
+		if (uncategorizedSkills == null) {
+			uncategorizedSkills = new ArrayList<>();
+		}
+		return uncategorizedSkills;
 	}
+
+//	public List<String> getIgnoredVerbs() {
+//		if (ignoredVerbs == null) {
+//			ignoredVerbs = new ArrayList<>();
+//		}
+//		return ignoredVerbs;
+//	}
 
 	public int getStatus() {
 		return status;
@@ -48,10 +56,10 @@ public class AnalyzeResponse {
 		this.message = message;
 	}
 
-	public List<String> getIgnoredLocations() {
-		if (ignoredLocations == null) {
-			ignoredLocations = new ArrayList<>();
-		}
-		return ignoredLocations;
-	}
+//	public List<String> getIgnoredLocations() {
+//		if (ignoredLocations == null) {
+//			ignoredLocations = new ArrayList<>();
+//		}
+//		return ignoredLocations;
+//	}
 }

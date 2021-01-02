@@ -1,19 +1,16 @@
 package com.hobo.bob;
 
-import java.io.FileInputStream;
+//import java.io.FileInputStream;
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-
-import org.apache.commons.lang3.StringUtils;
-import org.apache.commons.lang3.text.WordUtils;
 
 import com.amazonaws.ClientConfiguration;
 import com.amazonaws.regions.Regions;
@@ -29,14 +26,15 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.hobo.bob.model.AnalyzeRequest;
 import com.hobo.bob.model.AnalyzeResponse;
+import com.hobo.bob.model.Category;
 import com.hobo.bob.model.Keyword;
 
-import opennlp.tools.namefind.NameFinderME;
-import opennlp.tools.namefind.TokenNameFinderModel;
-import opennlp.tools.postag.POSModel;
-import opennlp.tools.postag.POSTaggerME;
-import opennlp.tools.tokenize.WhitespaceTokenizer;
-import opennlp.tools.util.Span;
+//import opennlp.tools.namefind.NameFinderME;
+//import opennlp.tools.namefind.TokenNameFinderModel;
+//import opennlp.tools.postag.POSModel;
+//import opennlp.tools.postag.POSTaggerME;
+//import opennlp.tools.tokenize.WhitespaceTokenizer;
+//import opennlp.tools.util.Span;
 
 public class AnalyzeHandler implements RequestHandler<AnalyzeRequest, AnalyzeResponse> {
 
@@ -61,21 +59,10 @@ public class AnalyzeHandler implements RequestHandler<AnalyzeRequest, AnalyzeRes
 				if (input.getJobsText() == null || input.getJobsText().isEmpty()) {
 					throw new IllegalArgumentException("Job Description is required to extract keywords");
 				}
-				Set<String> multiwordKeywords = getMultiwordKeywords();
-				Set<String> ignoredVerbs = findVerbs(input.getJobsText(), multiwordKeywords);
-				Set<String> ignoredLocations = findLocations(input.getJobsText(), multiwordKeywords);
-				List<Keyword> missingKeywords = analyze(input.getResumeText(), input.getJobsText(), ignoredVerbs,
-						ignoredLocations, multiwordKeywords);
+				Map<String, Set<String>> skills = getSkills();
+				extractUncategorized(input.getResumeText(), input.getJobsText(), skills);
+				response = analyze(input.getResumeText(), input.getJobsText(), skills);
 
-				response.setMissingKeywords(missingKeywords);
-				ignoredVerbs.forEach(verb -> {
-					response.getIgnoredVerbs().add(WordUtils.capitalizeFully(verb));
-				});
-				ignoredLocations.forEach(verb -> {
-					response.getIgnoredLocations().add(WordUtils.capitalizeFully(verb));
-				});
-				Collections.sort(response.getIgnoredVerbs());
-				Collections.sort(response.getIgnoredLocations());
 				response.setStatus(200);
 				response.setMessage("Success");
 			} catch (Exception e) {
@@ -88,88 +75,107 @@ public class AnalyzeHandler implements RequestHandler<AnalyzeRequest, AnalyzeRes
 				dynamoDb = null;
 			}
 		}
+		logger.log("output: " + gson.toJson(response));
 
 		return response;
 	}
+	
+	private void extractUncategorized(String resumeText, String jobsText, Map<String, Set<String>> skills) throws IOException {
+		String text = resumeText + jobsText;
+		Set<String> uncategorizedSkills = skills.get(Category.uncategorized.toString());
+		
+//		Set<String> ignoredVerbs = findVerbs(text);
+//		Set<String> ignoredLocations = findLocations(text);
 
-	private Set<String> findVerbs(String jobsText, Set<String> multiwordKeywords) throws IOException {
-		Set<String> ignoredVerbs = new HashSet<>();
-		POSModel model = new POSModel(new FileInputStream("en-pos-maxent.bin"));
-		POSTaggerME tagger = new POSTaggerME(model);
+		Set<String> keywords = parse(text);
+		keywords.removeAll(skills.get(Category.ignored.toString()));
+		keywords.removeAll(skills.get(Category.hard.toString()));
+		keywords.removeAll(skills.get(Category.soft.toString()));
 
-		WhitespaceTokenizer whitespaceTokenizer = WhitespaceTokenizer.INSTANCE;
-		String[] tokens = whitespaceTokenizer.tokenize(jobsText);
-
-		String[] tags = tagger.tag(tokens);
-		for (int i = 0; i < tags.length; i++) {
-			String token = tokens[i].toLowerCase();
-			if (tags[i].startsWith("V") && !token.endsWith("ing") && !multiwordKeywords.contains(token)) {
-				ignoredVerbs.add(token);
-			}
-		}
-
-		return ignoredVerbs;
+//		ignoreSet(keywords, ignoredVerbs);
+//		ignoreSet(keywords, ignoredLocations);
+		
+//		skills.put(Category.ignoredVerbs.toString(), ignoredVerbs);
+//		skills.put(Category.ignoredLocations.toString(), ignoredLocations);
+		uncategorizedSkills.addAll(keywords);
 	}
 
-	private Set<String> findLocations(String jobsText, Set<String> multiwordKeywords) throws IOException {
-		Set<String> ignoredLocations = new HashSet<>();
-		TokenNameFinderModel model = new TokenNameFinderModel(new FileInputStream("en-ner-location.bin"));
-		NameFinderME finder = new NameFinderME(model);
+//	private Set<String> findVerbs(String text) throws IOException {
+//		Set<String> ignoredVerbs = new HashSet<>();
+//		POSModel model = new POSModel(new FileInputStream("en-pos-maxent.bin"));
+//		POSTaggerME tagger = new POSTaggerME(model);
+//
+//		WhitespaceTokenizer whitespaceTokenizer = WhitespaceTokenizer.INSTANCE;
+//		String[] tokens = whitespaceTokenizer.tokenize(text);
+//
+//		String[] tags = tagger.tag(tokens);
+//		for (int i = 0; i < tags.length; i++) {
+//			String token = tokens[i].toLowerCase();
+//			if (tags[i].startsWith("V") && !token.endsWith("ing")) {
+//				ignoredVerbs.add(token);
+//			}
+//		}
+//
+//		return ignoredVerbs;
+//	}
 
-		WhitespaceTokenizer whitespaceTokenizer = WhitespaceTokenizer.INSTANCE;
-		String[] tokens = whitespaceTokenizer.tokenize(jobsText);
-		Span[] spans = finder.find(tokens);
-		for (Span span : spans) {
-			logger.log("Found location: " + span + "\n" + tokens[span.getStart()] + "\n" + span.getProb());
-			String loc = tokens[span.getStart()].toLowerCase();
-			if (span.getProb() > 0.75 && !multiwordKeywords.contains(loc)) {
-				ignoredLocations.add(loc);
-				if (span.getEnd() > span.getStart() + 1) {
-					for (int i = span.getStart() + 1; i < span.getEnd(); i++) {
-						loc = tokens[i].toLowerCase();
-						if (!multiwordKeywords.contains(loc)) {
-							ignoredLocations.add(loc);
-						}
-					}
-				}
-			}
-		}
+//	private Set<String> findLocations(String text) throws IOException {
+//		Set<String> ignoredLocations = new HashSet<>();
+//		TokenNameFinderModel model = new TokenNameFinderModel(new FileInputStream("en-ner-location.bin"));
+//		NameFinderME finder = new NameFinderME(model);
+//
+//		WhitespaceTokenizer whitespaceTokenizer = WhitespaceTokenizer.INSTANCE;
+//		String[] tokens = whitespaceTokenizer.tokenize(text);
+//		Span[] spans = finder.find(tokens);
+//		for (Span span : spans) {
+//			//logger.log("Found location: " + span + "\n" + tokens[span.getStart()] + "\n" + span.getProb());
+//			String loc = tokens[span.getStart()].toLowerCase();
+//			if (span.getProb() > 0.75) {
+//				ignoredLocations.add(loc);
+//				if (span.getEnd() > span.getStart() + 1) {
+//					for (int i = span.getStart() + 1; i < span.getEnd(); i++) {
+//						loc = tokens[i].toLowerCase();
+//						ignoredLocations.add(loc);
+//					}
+//				}
+//			}
+//		}
+//
+//		return ignoredLocations;
+//	}
 
-		return ignoredLocations;
-	}
+	private AnalyzeResponse analyze(String resumeText, String jobsText, Map<String, Set<String>> skills) {
+		AnalyzeResponse response = new AnalyzeResponse();
+		
+		// Set Ignored
+//		response.getIgnoredVerbs().addAll(skills.get(Category.ignoredVerbs.toString()));
+//		Collections.sort(response.getIgnoredVerbs());
+//		response.getIgnoredLocations().addAll(skills.get(Category.ignoredLocations.toString()));
+//		Collections.sort(response.getIgnoredLocations());
+		
+		countSkills(resumeText, jobsText, skills.get(Category.hard.toString()), response.getHardSkills());
+		countSkills(resumeText, jobsText, skills.get(Category.soft.toString()), response.getSoftSkills());
+		countSkills(resumeText, jobsText, skills.get(Category.uncategorized.toString()), response.getUncategorizedSkills());
 
-	private List<Keyword> analyze(String resumeText, String jobsText, Set<String> ignoredVerbs,
-			Set<String> ignoredLocations, Set<String> multiwordKeywords) {
-		Set<String> resumeKeywords = parse(resumeText, multiwordKeywords);
-		Set<String> jobKeywords = parse(jobsText, multiwordKeywords);
-
-		jobKeywords.removeAll(resumeKeywords);
-		jobKeywords.removeAll(getIgnoredKeywords());
-
-		ignoreSet(jobKeywords, ignoredVerbs);
-		ignoreSet(jobKeywords, ignoredLocations);
-
-		List<Keyword> missingKeywords = new ArrayList<>();
-		String jobsTextLower = jobsText.toLowerCase();
-		for (String keyword : jobKeywords) {
-			missingKeywords.add(new Keyword(WordUtils.capitalizeFully(keyword), countMatches(jobsTextLower, keyword)));
-		}
-
-		Collections.sort(missingKeywords, new Comparator<Keyword>() {
+		Comparator<Keyword> comparator = new Comparator<Keyword>() {
 
 			@Override
 			public int compare(Keyword o1, Keyword o2) {
 				// Want max instances followed by alphabetical order of keywords
-				return o1.getInstances() != o2.getInstances() ? o2.getInstances() - o1.getInstances()
+				return o1.getJobInstances() != o2.getJobInstances() ? o2.getJobInstances() - o1.getJobInstances()
 						: o1.getKeyword().compareTo(o2.getKeyword());
 			}
 
-		});
+		};
 
-		return missingKeywords;
+		Collections.sort(response.getHardSkills(), comparator);
+		Collections.sort(response.getSoftSkills(), comparator);
+		Collections.sort(response.getUncategorizedSkills(), comparator);
+
+		return response;
 	}
 
-	private Set<String> parse(String toParse, Set<String> multiwordKeywords) {
+	private Set<String> parse(String toParse) {
 		toParse = toParse.toLowerCase();
 		Set<String> keywords = new HashSet<>();
 		Pattern pattern = Pattern.compile("[\\w-]*[a-z][\\w-]*");
@@ -178,7 +184,17 @@ public class AnalyzeHandler implements RequestHandler<AnalyzeRequest, AnalyzeRes
 			keywords.add(matcher.group());
 		}
 
-		for (String multiword : multiwordKeywords) {
+		return keywords;
+	}
+	
+	/**
+	 * @deprecated
+	 * @return
+	 */
+	@SuppressWarnings("unused")
+	private Set<String> extractMultiword(Set<String> uncategorizedSkills, String toParse) {
+		Set<String> keywords = new HashSet<>();
+		for (String multiword : uncategorizedSkills) {
 			if (toParse.contains(multiword)
 					|| (multiword.contains("-") && toParse.contains(multiword.replaceAll("-", " ")))) {
 				keywords.add(multiword);
@@ -191,25 +207,31 @@ public class AnalyzeHandler implements RequestHandler<AnalyzeRequest, AnalyzeRes
 				}
 			}
 		}
-
 		return keywords;
 	}
-
-	private int countMatches(String jobsTextLower, String keyword) {
-		int total = StringUtils.countMatches(jobsTextLower, keyword);
-		if (keyword.matches(".*\\(.*\\).*") && keyword.indexOf(" (") > 0
-				&& keyword.indexOf("(") + 1 < keyword.indexOf(")")) {
-			String name = keyword.substring(0, keyword.indexOf(" ("));
-			String abbreviation = keyword.substring(keyword.indexOf("(") + 1, keyword.indexOf(")"));
-			// Only name
-			Matcher matcher = Pattern.compile(name + "(?! \\(" + abbreviation + "\\))").matcher(jobsTextLower);
-			while (matcher.find()) {
-				total++;
+	
+	private void countSkills(String resumeText, String jobsText, Set<String> skills, List<Keyword> response) {
+		for (String skill : skills) {
+			Keyword keyword = new Keyword(skill);
+			keyword.setJobInstances(countMatches(jobsText, keyword, true));
+			if (keyword.getJobInstances() > 0) {
+				keyword.setResumeInstances(countMatches(resumeText, keyword, false));
+				response.add(keyword);
 			}
-			// Only abbreviation
-			matcher = Pattern.compile("(?<=\\b|\\\\n)(?<!" + name + " \\()" + abbreviation + "\\b")
-					.matcher(jobsTextLower);
-			while (matcher.find()) {
+		}
+	}
+
+	private int countMatches(String text, Keyword keyword, boolean setFirstMatch) {
+		int total = 0;
+		Pattern p = Pattern.compile("\\b" + Pattern.quote(keyword.getKeyword()).replaceAll(" ", "[- \\/]?") + "\\b",
+				Pattern.CASE_INSENSITIVE);
+		Matcher m = p.matcher(text);
+		if (m.find()) {
+			total++;
+			if (setFirstMatch) {
+				keyword.setKeyword(m.group());
+			}
+			while (m.find()) {
 				total++;
 			}
 		}
@@ -217,6 +239,7 @@ public class AnalyzeHandler implements RequestHandler<AnalyzeRequest, AnalyzeRes
 		return total;
 	}
 
+	@SuppressWarnings("unused")
 	private void ignoreSet(Set<String> jobKeywords, Set<String> ignored) {
 		// Determine only the ignored keywords that would actually have been returned
 		// and remove
@@ -231,20 +254,19 @@ public class AnalyzeHandler implements RequestHandler<AnalyzeRequest, AnalyzeRes
 		}
 	}
 
-	private Set<String> getMultiwordKeywords() {
-		return scanTable("MultiwordKeywords");
-	}
-
-	private Set<String> getIgnoredKeywords() {
-		return scanTable("IgnoredKeywords");
-	}
-
-	private Set<String> scanTable(String table) {
-		Set<String> keywords = new HashSet<>();
-		ScanResult result = dynamoDb.scan(new ScanRequest().withTableName(table));
+	private Map<String, Set<String>> getSkills() {
+		Map<String, Set<String>> skills = new HashMap<>();
+		ScanResult result = dynamoDb.scan(new ScanRequest().withTableName("Skills"));
 		for (Map<String, AttributeValue> item : result.getItems()) {
-			keywords.add(item.get("keyword").getS());
+			String category = item.get("category").getS();
+			Set<String> skillSet = skills.get(category);
+			if (skillSet == null) {
+				skillSet = new HashSet<>();
+				skills.put(category, skillSet);
+			}
+			skillSet.add(item.get("keyword").getS());
 		}
-		return keywords;
+		
+		return skills;
 	}
 }
