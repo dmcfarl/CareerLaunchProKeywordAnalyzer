@@ -40,13 +40,17 @@ public class AnalyzeHandler implements RequestHandler<AnalyzeRequest, AnalyzeRes
 
 	private AmazonDynamoDB dynamoDb = null;
 
-	private LambdaLogger logger;
+	private LambdaLogger logger = null;
 
 	@Override
 	public AnalyzeResponse handleRequest(AnalyzeRequest input, Context context) {
-		logger = context.getLogger();
+		if (context != null) {
+			logger = context.getLogger();
+		}
 		Gson gson = new GsonBuilder().setPrettyPrinting().create();
-		logger.log("input: " + gson.toJson(input));
+		if (logger != null) {
+			logger.log("input: " + gson.toJson(input));
+		}
 		AnalyzeResponse response = new AnalyzeResponse();
 		try {
 			initDynamoDbClient();
@@ -75,7 +79,9 @@ public class AnalyzeHandler implements RequestHandler<AnalyzeRequest, AnalyzeRes
 				dynamoDb = null;
 			}
 		}
-		logger.log("output: " + gson.toJson(response));
+		if (logger != null) {
+			logger.log("output: " + gson.toJson(response));
+		}
 
 		return response;
 	}
@@ -223,7 +229,7 @@ public class AnalyzeHandler implements RequestHandler<AnalyzeRequest, AnalyzeRes
 
 	private int countMatches(String text, Keyword keyword, boolean setFirstMatch) {
 		int total = 0;
-		Pattern p = Pattern.compile("\\b" + Pattern.quote(keyword.getKeyword()).replaceAll(" ", "[- \\/]?") + "\\b",
+		Pattern p = Pattern.compile("\\b" + Pattern.quote(keyword.getKeyword()).replaceAll(" ", "\\\\E[- \\/]?\\\\Q") + "\\b",
 				Pattern.CASE_INSENSITIVE);
 		Matcher m = p.matcher(text);
 		if (m.find()) {
